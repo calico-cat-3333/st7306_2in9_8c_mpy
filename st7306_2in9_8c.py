@@ -3,15 +3,25 @@ import struct
 import time
 import micropython
 
-class COLORBGR:
-    RED = 0b001
-    GREEN = 0b010
-    BLUE = 0b100
-    YELLOW = 0b011
-    CYAN = 0b110
-    MAGENTA = 0b101
+class COLOR111:
     BLACK = 0b000
+    BLUE = 0b001
+    GREEN = 0b010
+    CYAN = 0b011
+    RED = 0b100
+    MAGENTA = 0b101
+    YELLOW = 0b110
     WHITE = 0b111
+
+def get_time(f, *args, **kwargs):
+    myname = f.__name__
+    def new_func(*args, **kwargs):
+        t = time.ticks_us()
+        result = f(*args, **kwargs)
+        delta = time.ticks_diff(time.ticks_us(), t)
+        print('Function {} Time = {:6.3f}ms, framerate={:6.3f}fps'.format(myname, delta/1000, 1000000/delta))
+        return result
+    return new_func
 
 class ST7306_2IN9_8C(framebuf.FrameBuffer):
     def __init__(self, spi, dc, cs, rst, te=None, rot=0, osc_51mhz=True, framerates=(1, 5), power_mode=True, inversion=False):
@@ -46,7 +56,8 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
 
         self.buffer = bytearray(self.height * self.width // 2) # 2 pixel pre byte
         self.wbuf = bytearray(self.width + 2) # 这个屏幕要求一次性必须写入 24 bit ，每次写入的 24 bit 为两行的 4 pixel, 暂时使用 4 次写入模式，即每 byte 的后 2 bti 被忽略，但是每 byte 刚好 2 pixel
-        #self.wbuf = bytearray((self.width + 2) // 4 * 3) 3 write for 24 bit
+        #self.wbuf = bytearray((self.width + 2) // 4 * 3) # 3 write for 24 bit
+        self.wbuf_mv = memoryview(self.wbuf)
         super().__init__(self.buffer, self.width, self.height, framebuf.GS4_HMSB)
         self.fill(0)
 
@@ -87,11 +98,11 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         row1 = (r * w2)
         row2 = ((r + 1) * w2)
         for i in range(w2):
-            k = i * 2 + 2
+            k = i * 2 + 2 # extra 2 pixels in the start of a line
             p1 = inbuf[row1 + i] << 1
             p2 = inbuf[row2 + i] << 1
-            wbuf[k] = (p1 & 0xE0) | ((p2 >> 3) & 0x1C)
-            wbuf[k + 1] = ((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C)
+            wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
+            wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
 
     @micropython.viper
     def _convert_3b(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
@@ -100,7 +111,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         row2 = ((r + 1) * w2)
         w2 = w2 >> 1
         for i in range(w2):
-            k = i * 3 + 2
+            k = i * 3
             p1 = inbuf[row1 + i * 2] << 1
             p2 = inbuf[row2 + i * 2] << 1
             wbuf[k] = (p1 & 0xE0) | ((p2 >> 3) & 0x1C) | ((p1 >> 2) & 0x03)
@@ -110,6 +121,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
             wbuf[k + 1] = wbuf[i * 3 + 1] | ((p1 >> 4) & 0x0E) | (p2 >> 7)
             wbuf[k + 2] = ((p2 << 1) & 0xC0) | ((p1 << 2) & 0x38) | ((p2 >> 1) & 0x07)
 
+    @get_time
     def flush(self):
         xs = 4
         xe = 56
@@ -127,6 +139,21 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
             self.spi.write(self.wbuf)
         self.cs.on()
 
+    @micropython.viper
+    def _convert_part(self, r: int, xs: int, width: int, inbuf: ptr8, wbuf: ptr8):
+        w2 = int(self.width) >> 1
+        aw2 = width >> 1
+        x2 = xs >> 2
+        row1 = (r * w2)
+        row2 = ((r + 1) * w2)
+        for i in range(aw2):
+            k = i * 2
+            p1 = inbuf[row1 + i + x2] << 1
+            p2 = inbuf[row2 + i + x2] << 1
+            wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
+            wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
+
+    @get_time
     def flush_part(self, x=0, y=0, w=210, h=480):
         if y % 2 != 0:
             y -= 1
@@ -140,9 +167,10 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         wofs = w % 4
         if wofs != 0:
             w += (4 - wofs)
+        print(x, y, w, h)
 
-        xs = 4 + x // 4
-        xe = xs + w // 4 - 1
+        xe = 56 - x // 4
+        xs = xe - w // 4 + 1
         ys = y // 2
         ye = ys + h // 2 - 1
         self._spi_write_cmd(b'\x2A')
@@ -153,8 +181,8 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self.cs.off()
         self.dc.on()
         for i in range(h // 2):
-            self._convert(y + i * 2, self.width, self.buffer, self.wbuf)
-            self.spi.write(self.wbuf)
+            self._convert_part(y + i * 2, x, w, self.buffer, self.wbuf)
+            self.spi.write(self.wbuf_mv[:w])
         self.cs.on()
 
     def lcd_init(self, te_enable=False, rot=0, osc_51mhz=True, framerates=(1, 5), power_mode=True, inversion=False):
@@ -208,9 +236,9 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._spi_write_data(b'\x48')
 
         self._spi_write_cmd(b'\x3A') # Data Format Select
-        # 8 color, data up down switch off
-        self._spi_write_data(b'\x32') # 4 write for 24 bit
-        #self._spi_write_data(b'\x33') # 3 write for 24 bit
+        # 8 color, data up down switch off, rgb111
+        self._spi_write_data(b'\x30') # 4 write for 24 bit
+       # self._spi_write_data(b'\x31') # 3 write for 24 bit
 
 
         self._spi_write_cmd(b'\xB9') # Gamma Mode Setting
