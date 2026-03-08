@@ -140,16 +140,21 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self.cs.on()
 
     @micropython.viper
-    def _convert_part(self, r: int, xs: int, width: int, inbuf: ptr8, wbuf: ptr8):
+    def _convert_part(self, r: int, x: int, width: int, inbuf: ptr8, wbuf: ptr8):
         w2 = int(self.width) >> 1
         aw2 = width >> 1
-        x2 = xs >> 2
+        x2 = x >> 1
+        ofs = 0
+        if x2 < 0:
+            ofs = 2
+            x2 = 0
         row1 = (r * w2)
         row2 = ((r + 1) * w2)
-        for i in range(aw2):
-            k = i * 2
-            p1 = inbuf[row1 + i + x2] << 1
-            p2 = inbuf[row2 + i + x2] << 1
+        for i in range(aw2 + 1):
+            k = i * 2 + ofs
+            j = i + x2
+            p1 = inbuf[row1 + j] << 1
+            p2 = inbuf[row2 + j] << 1
             wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
             wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
 
@@ -160,16 +165,15 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
             h += 1
         if h % 2 != 0:
             h += 1
-        xofs = x % 4
+        xofs = (x - 2) % 4
         if xofs != 0:
             x -= xofs
             w += xofs
         wofs = w % 4
         if wofs != 0:
             w += (4 - wofs)
-        print(x, y, w, h)
 
-        xe = 56 - x // 4
+        xe = 56 - x // 4 - 1
         xs = xe - w // 4 + 1
         ys = y // 2
         ye = ys + h // 2 - 1
