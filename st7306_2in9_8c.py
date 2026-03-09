@@ -322,13 +322,10 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
             for xi in range(w):
                 xo = x + xi
                 rgb565 = inbuf[rowi + xi]
-                r = (rgb565 >> 11) & 0x1f
-                g = (rgb565 >> 6) & 0x1f # only use 5 bit
-                b = (rgb565) & 0x1f
                 blut_mov = (xo & 3) | ((yo << 2) & 0xC)
-                outc = ((blut[r] >> blut_mov) & 1) << 2
-                outc |= (((blut[g] >> blut_mov) & 1) << 1)
-                outc |= ((blut[b] >> blut_mov) & 1)
+                outc = ((blut[(rgb565 >> 11) & 0x1f] >> blut_mov) & 1) << 2
+                outc |= (((blut[(rgb565 >> 6) & 0x1f] >> blut_mov) & 1) << 1) # only use 5 bit
+                outc |= ((blut[(rgb565) & 0x1f] >> blut_mov) & 1)
                 xpos = rowo + (xo >> 1)
                 pm = ((xo + 1) & 1) * 4 # xo is even: get higher 4 bit
                 obuf[xpos] = (obuf[xpos] & (0xf0 >> pm)) | (outc << pm)
@@ -343,12 +340,13 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
                 xo = x + xi
                 rgb565 = inbuf[rowi + xi]
                 outc = (rgb565 >> 13) & 4
-                outc |= ((rgb565 >> 9) & 2) # only use 5 bit
+                outc |= ((rgb565 >> 9) & 2)
                 outc |= (rgb565 >> 4) & 1
                 xpos = rowo + (xo >> 1)
                 pm = ((xo + 1) & 1) * 4 # xo is even: get higher 4 bit
                 obuf[xpos] = (obuf[xpos] & (0xf0 >> pm)) | (outc << pm)
 
+    @get_time
     def blit_buffer_rgb565(self, buffer, x, y, w, h, use_bayer=False):
         if use_bayer:
             self._blit_buffer_rgb565_bayer_viper(buffer, self.buffer, x, y, w, h, compressed_bayer_lut)
