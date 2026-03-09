@@ -2,6 +2,10 @@ import framebuf
 import struct
 import time
 import micropython
+from micropython import const
+
+LCD_HEIGHT = const(480)
+LCD_WIDTH = const(210)
 
 class COLOR111:
     BLACK = 0b000
@@ -19,9 +23,22 @@ def get_time(f, *args, **kwargs):
         t = time.ticks_us()
         result = f(*args, **kwargs)
         delta = time.ticks_diff(time.ticks_us(), t)
-        print('Function {} Time = {:6.3f}ms, framerate={:6.3f}fps'.format(myname, delta/1000, 1000000/delta))
+        print('Function {} Time = {:6.3f}ms'.format(myname, delta/1000), end=', ')
+        if myname == 'flush':
+            print('framerate = {:6.3f}fps'.format(1000000/delta))
+        else:
+            print('')
         return result
     return new_func
+
+# 5bit gray to mono bayer dither
+# useage: ((compressed_bayer_lut[5bit grayscale] >> ((x & 3) | ((y << 2) & 0xC))) & 1)
+compressed_bayer_lut = bytearray(struct.pack('@' + 'H' * 32,
+    0, 1, 1, 1025, 1025, 1029, 1029, 1285,
+    1285, 1317, 1317, 34085, 34085, 34213, 34213, 42405,
+    42405, 42407, 42407, 44455, 44455, 44463, 44463, 44975,
+    44975, 44991, 44991, 61375, 61375, 61439, 61439, 65535,
+))
 
 class ST7306_2IN9_8C(framebuf.FrameBuffer):
     def __init__(self, spi, dc, cs, rst, te=None, rot=0, osc_51mhz=True, framerates=(1, 5), power_mode=True, inversion=False):
@@ -44,15 +61,12 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
 
         self.rotation = rot
 
-        self.LCD_HEIGHT = 480
-        self.LCD_WIDTH = 210
-
         if self.rotation % 2 == 0:
-            self.height = self.LCD_HEIGHT
-            self.width = self.LCD_WIDTH
+            self.height = LCD_HEIGHT
+            self.width = LCD_WIDTH
         else:
-            self.height = self.LCD_WIDTH
-            self.width = self.LCD_HEIGHT
+            self.height = LCD_WIDTH
+            self.width = LCD_HEIGHT
 
         self.buffer = bytearray(self.height * self.width // 2) # 2 pixel pre byte
         self.wbuf = bytearray(self.width + 2) # 这个屏幕要求一次性必须写入 24 bit ，每次写入的 24 bit 为两行的 4 pixel, 暂时使用 4 次写入模式，即每 byte 的后 2 bti 被忽略，但是每 byte 刚好 2 pixel
@@ -140,17 +154,11 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self.cs.on()
 
     @micropython.viper
-    def _convert_part(self, r: int, x: int, width: int, inbuf: ptr8, wbuf: ptr8):
+    def _convert_part(self, r: int, x2: int, ofs: int, aw2: int, inbuf: ptr8, wbuf: ptr8):
         w2 = int(self.width) >> 1
-        aw2 = width >> 1
-        x2 = x >> 1
-        ofs = 0
-        if x2 < 0:
-            ofs = 2
-            x2 = 0
         row1 = (r * w2)
         row2 = ((r + 1) * w2)
-        for i in range(aw2 + 1):
+        for i in range(aw2):
             k = i * 2 + ofs
             j = i + x2
             p1 = inbuf[row1 + j] << 1
@@ -160,6 +168,10 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
 
     @get_time
     def flush_part(self, x=0, y=0, w=210, h=480):
+        x = min(209, max(0, x))
+        y = min(479, max(0, y))
+        w = min(210 - x, max(0, w))
+        h = min(480 - y, max(0, h))
         if y % 2 != 0:
             y -= 1
             h += 1
@@ -184,8 +196,15 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._spi_write_cmd(b'\x2C')
         self.cs.off()
         self.dc.on()
+        x2 = x // 2
+        aw2 = w // 2
+        ofs = 0
+        if x2 < 0:
+            x2 = 0
+            ofs = 2
+            aw2 -= 1
         for i in range(h // 2):
-            self._convert_part(y + i * 2, x, w, self.buffer, self.wbuf)
+            self._convert_part(y + i * 2, x2, ofs, aw2, self.buffer, self.wbuf)
             self.spi.write(self.wbuf_mv[:w])
         self.cs.on()
 
@@ -216,7 +235,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._spi_write_cmd(b'\xB2') # Frame Rate Control
         self._spi_write_data(bytes([((framerates[0] << 4) | framerates[1]) & 0x17])) # HPM ; LPM
         self._spi_write_cmd(b'\xB3') # Update Period Gate EQ Control in HPM
-        self._spi_write_data(b'\xE5\xF6\x05\x46\x77\x77\x77\x77\x76\x45')
+        self._spi_write_data(b'\xE5\xF6\x05\x46\x77\x77\x77\x77\x76\x45') # HPM EQ Control
         self._spi_write_cmd(b'\xB4') # Update Period Gate EQ Control in LPM
         self._spi_write_data(b'\x05\x46\x77\x77\x77\x77\x76\x45') # LPM EQ Control
         self._spi_write_cmd(b'\xB7') # Source EQ Enable
@@ -292,3 +311,46 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
 
     def soft_reset(self):
         self._spi_write_cmd(b'\x01') # soft reset
+
+    @micropython.viper
+    def _blit_buffer_rgb565_bayer_viper(self, inbuf: ptr16, obuf: ptr8, x: int, y: int, w: int, h: int, blut: ptr16):
+        w2 = int(self.width) >> 1
+        for yi in range(h):
+            yo = y + yi
+            rowo = yo * w2
+            rowi = yi * w
+            for xi in range(w):
+                xo = x + xi
+                rgb565 = inbuf[rowi + xi]
+                r = (rgb565 >> 11) & 0x1f
+                g = (rgb565 >> 6) & 0x1f # only use 5 bit
+                b = (rgb565) & 0x1f
+                blut_mov = (xo & 3) | ((yo << 2) & 0xC)
+                outc = ((blut[r] >> blut_mov) & 1) << 2
+                outc |= (((blut[g] >> blut_mov) & 1) << 1)
+                outc |= ((blut[b] >> blut_mov) & 1)
+                xpos = rowo + (xo >> 1)
+                pm = ((xo + 1) & 1) * 4 # xo is even: get higher 4 bit
+                obuf[xpos] = (obuf[xpos] & (0xf0 >> pm)) | (outc << pm)
+
+    @micropython.viper
+    def _blit_buffer_rgb565_viper(self, inbuf: ptr16, obuf: ptr8, x: int, y: int, w: int, h: int):
+        w2 = int(self.width) >> 1
+        for yi in range(h):
+            rowo = (y + yi) * w2
+            rowi = yi * w
+            for xi in range(w):
+                xo = x + xi
+                rgb565 = inbuf[rowi + xi]
+                outc = (rgb565 >> 13) & 4
+                outc |= ((rgb565 >> 9) & 2) # only use 5 bit
+                outc |= (rgb565 >> 4) & 1
+                xpos = rowo + (xo >> 1)
+                pm = ((xo + 1) & 1) * 4 # xo is even: get higher 4 bit
+                obuf[xpos] = (obuf[xpos] & (0xf0 >> pm)) | (outc << pm)
+
+    def blit_buffer_rgb565(self, buffer, x, y, w, h, use_bayer=False):
+        if use_bayer:
+            self._blit_buffer_rgb565_bayer_viper(buffer, self.buffer, x, y, w, h, compressed_bayer_lut)
+        else:
+            self._blit_buffer_rgb565_viper(buffer, self.buffer, x, y, w, h)
