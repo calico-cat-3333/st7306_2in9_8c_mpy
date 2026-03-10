@@ -317,34 +317,71 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         w2 = int(self.width) >> 1
         for yi in range(h):
             yo = y + yi
-            rowo = yo * w2
-            rowi = yi * w
-            for xi in range(w):
-                xo = x + xi
-                rgb565 = inbuf[rowi + xi]
-                blut_mov = (xo & 3) | ((yo << 2) & 0xC)
-                outc = ((blut[(rgb565 >> 11) & 0x1f] >> blut_mov) & 1) << 2
-                outc |= (((blut[(rgb565 >> 6) & 0x1f] >> blut_mov) & 1) << 1) # only use 5 bit
-                outc |= ((blut[(rgb565) & 0x1f] >> blut_mov) & 1)
-                xpos = rowo + (xo >> 1)
-                pm = ((xo + 1) & 1) * 4 # xo is even: get higher 4 bit
-                obuf[xpos] = (obuf[xpos] & (0xf0 >> pm)) | (outc << pm)
+            optr = yo * w2 + (x >> 1)
+            iptr = yi * w
+            yo_mov = ((yo << 2) & 0xC)
+            xo_mov = x & 3
+            wc = w
+            if x & 1:
+                rgb565_2 = inbuf[iptr]
+                iptr += 1
+                blut_mov_2 = xo_mov | yo_mov
+                xo_mov = (xo_mov + 1) & 3
+                outc2 = ((blut[(rgb565_2 >> 11) & 0x1f] >> blut_mov_2) & 1) << 2
+                outc2 |= (((blut[(rgb565_2 >> 6) & 0x1f] >> blut_mov_2) & 1) << 1) # only use 5 bit
+                outc2 |= ((blut[(rgb565_2) & 0x1f] >> blut_mov_2) & 1)
+                obuf[optr] = (obuf[optr] & 0xf0) | (outc2)
+                optr += 1
+                wc -= 1
+            for xi in range(wc >> 1):
+                rgb565_1 = inbuf[iptr]
+                rgb565_2 = inbuf[iptr + 1]
+                iptr += 2
+                blut_mov_1 = xo_mov | yo_mov
+                blut_mov_2 = ((xo_mov + 1) & 3) | yo_mov
+                xo_mov ^= 2 # a ^ 2 == (a + 2) & 3
+                outc1 = ((blut[(rgb565_1 >> 11) & 0x1f] >> blut_mov_1) & 1) << 2
+                outc1 |= (((blut[(rgb565_1 >> 6) & 0x1f] >> blut_mov_1) & 1) << 1) # only use 5 bit
+                outc1 |= ((blut[(rgb565_1) & 0x1f] >> blut_mov_1) & 1)
+                outc2 = ((blut[(rgb565_2 >> 11) & 0x1f] >> blut_mov_2) & 1) << 2
+                outc2 |= (((blut[(rgb565_2 >> 6) & 0x1f] >> blut_mov_2) & 1) << 1) # only use 5 bit
+                outc2 |= ((blut[(rgb565_2) & 0x1f] >> blut_mov_2) & 1)
+                obuf[optr] = (outc1 << 4) | outc2
+                optr += 1
+            if wc & 1:
+                blut_mov_1 = xo_mov | yo_mov
+                rgb565_1 = inbuf[iptr]
+                outc1 = ((blut[(rgb565_1 >> 11) & 0x1f] >> blut_mov_1) & 1) << 2
+                outc1 |= (((blut[(rgb565_1 >> 6) & 0x1f] >> blut_mov_1) & 1) << 1) # only use 5 bit
+                outc1 |= ((blut[(rgb565_1) & 0x1f] >> blut_mov_1) & 1)
+                obuf[optr] = (obuf[optr] & 0x0f) | (outc1 << 4)
 
     @micropython.viper
     def _blit_buffer_rgb565_viper(self, inbuf: ptr16, obuf: ptr8, x: int, y: int, w: int, h: int):
         w2 = int(self.width) >> 1
         for yi in range(h):
-            rowo = (y + yi) * w2
-            rowi = yi * w
-            for xi in range(w):
-                xo = x + xi
-                rgb565 = inbuf[rowi + xi]
-                outc = (rgb565 >> 13) & 4
-                outc |= ((rgb565 >> 9) & 2)
-                outc |= (rgb565 >> 4) & 1
-                xpos = rowo + (xo >> 1)
-                pm = ((xo + 1) & 1) * 4 # xo is even: get higher 4 bit
-                obuf[xpos] = (obuf[xpos] & (0xf0 >> pm)) | (outc << pm)
+            optr = (y + yi) * w2 + (x >> 1)
+            iptr = yi * w
+            wc = w
+            if x & 1:
+                rgb565_2 = inbuf[iptr]
+                iptr += 1
+                outc2 = ((rgb565_2 >> 13) & 4) | ((rgb565_2 >> 9) & 2) | ((rgb565_2 >> 4) & 1)
+                obuf[optr] = (obuf[optr] & 0xf0) | outc2
+                optr += 1
+                wc -= 1
+            for xi in range(wc >> 1):
+                rgb565_1 = inbuf[iptr]
+                rgb565_2 = inbuf[iptr + 1]
+                iptr += 2
+                outc1 = ((rgb565_1 >> 13) & 4) | ((rgb565_1 >> 9) & 2) | ((rgb565_1 >> 4) & 1)
+                outc2 = ((rgb565_2 >> 13) & 4) | ((rgb565_2 >> 9) & 2) | ((rgb565_2 >> 4) & 1)
+                obuf[optr] = (outc1 << 4) | outc2
+                optr += 1
+            if wc & 1:
+                rgb565_1 = inbuf[iptr]
+                outc1 = ((rgb565_1 >> 13) & 4) | ((rgb565_1 >> 9) & 2) | ((rgb565_1 >> 4) & 1)
+                obuf[optr] = (obuf[optr] & 0x0f) | (outc1 << 4)
 
     @get_time
     def blit_buffer_rgb565(self, buffer, x, y, w, h, use_bayer=False):
