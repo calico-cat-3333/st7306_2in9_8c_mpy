@@ -32,7 +32,7 @@ def get_time(f, *args, **kwargs):
     return new_func
 
 # 5bit gray to mono bayer dither
-# useage: ((compressed_bayer_lut[5bit grayscale] >> ((x & 3) | ((y << 2) & 0xC))) & 1)
+# useage: ((ptr16(compressed_bayer_lut)[5bit grayscale] >> ((x & 3) | ((y << 2) & 0xC))) & 1)
 compressed_bayer_lut = bytearray(struct.pack('@' + 'H' * 32,
     0, 1, 1, 1025, 1025, 1029, 1029, 1285,
     1285, 1317, 1317, 34085, 34085, 34213, 34213, 42405,

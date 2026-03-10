@@ -12,5 +12,6 @@
 
 - [ ] TE support
 - [ ] rotation support
+- [ ] mirror support
 - [ ] 3 write for 24 bit mode support
 - [ ] adjust voltage, support low framerate
