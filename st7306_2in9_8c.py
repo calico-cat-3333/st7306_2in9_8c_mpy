@@ -107,33 +107,55 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self.cs.on()
 
     @micropython.viper
-    def _convert(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
-        w2 = width >> 1
-        row1 = (r * w2)
-        row2 = ((r + 1) * w2)
-        for i in range(w2):
-            k = i * 2 + 2 # extra 2 pixels in the start of a line
-            p1 = inbuf[row1 + i] << 1
-            p2 = inbuf[row2 + i] << 1
-            wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
-            wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
+    def _convert_write(self):
+        inbuf = ptr8(self.buffer)
+        wbuf = ptr8(self.wbuf)
+        w = int(self.width)
+        w2 = w >> 1
+        h2 = int(self.height) >> 1
+        row1 = 0
+        row2 = w2
+        for j in range(h2):
+            k = 2
+            for i in range(w2):
+                p1 = inbuf[row1 + i] << 1
+                p2 = inbuf[row2 + i] << 1
+                wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
+                wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
+                k += 2
+            row1 += w
+            row2 += w
+            self.spi.write(self.wbuf)
 
-    @micropython.viper
-    def _convert_3b(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
-        w2 = width >> 1
-        row1 = (r * w2)
-        row2 = ((r + 1) * w2)
-        w2 = w2 >> 1
-        for i in range(w2):
-            k = i * 3
-            p1 = inbuf[row1 + i * 2] << 1
-            p2 = inbuf[row2 + i * 2] << 1
-            wbuf[k] = (p1 & 0xE0) | ((p2 >> 3) & 0x1C) | ((p1 >> 2) & 0x03)
-            wbuf[k + 1] = ((p1 << 6) & 0x80) | ((p2 << 3) & 0x70)
-            p1 = inbuf[row1 + i * 2 + 1] << 1
-            p2 = inbuf[row2 + i * 2 + 1] << 1
-            wbuf[k + 1] = wbuf[i * 3 + 1] | ((p1 >> 4) & 0x0E) | (p2 >> 7)
-            wbuf[k + 2] = ((p2 << 1) & 0xC0) | ((p1 << 2) & 0x38) | ((p2 >> 1) & 0x07)
+    # @micropython.viper
+    # def _convert(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
+    #     w2 = width >> 1
+    #     row1 = (r * w2)
+    #     row2 = ((r + 1) * w2)
+    #     k = 2
+    #     for i in range(w2):
+    #         p1 = inbuf[row1 + i] << 1
+    #         p2 = inbuf[row2 + i] << 1
+    #         wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
+    #         wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
+    #         k += 2
+    #
+    # @micropython.viper
+    # def _convert_3b(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
+    #     w2 = width >> 1
+    #     row1 = (r * w2)
+    #     row2 = ((r + 1) * w2)
+    #     w2 = w2 >> 1
+    #     for i in range(w2):
+    #         k = i * 3
+    #         p1 = inbuf[row1 + i * 2] << 1
+    #         p2 = inbuf[row2 + i * 2] << 1
+    #         wbuf[k] = (p1 & 0xE0) | ((p2 >> 3) & 0x1C) | ((p1 >> 2) & 0x03)
+    #         wbuf[k + 1] = ((p1 << 6) & 0x80) | ((p2 << 3) & 0x70)
+    #         p1 = inbuf[row1 + i * 2 + 1] << 1
+    #         p2 = inbuf[row2 + i * 2 + 1] << 1
+    #         wbuf[k + 1] = wbuf[i * 3 + 1] | ((p1 >> 4) & 0x0E) | (p2 >> 7)
+    #         wbuf[k + 2] = ((p2 << 1) & 0xC0) | ((p1 << 2) & 0x38) | ((p2 >> 1) & 0x07)
 
     @get_time
     def flush(self):
@@ -148,23 +170,53 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._spi_write_cmd(b'\x2C')
         self.cs.off()
         self.dc.on()
-        for i in range(self.height // 2):
-            self._convert(i * 2, self.width, self.buffer, self.wbuf)
-            self.spi.write(self.wbuf)
+        # for i in range(self.height // 2):
+        #     self._convert(i * 2, self.width, self.buffer, self.wbuf)
+        #     self.spi.write(self.wbuf)
+        self._convert_write()
         self.cs.on()
 
+    # @micropython.viper
+    # def _convert_part(self, r: int, x2: int, ofs: int, aw2: int, inbuf: ptr8, wbuf: ptr8):
+    #     w2 = int(self.width) >> 1
+    #     row1 = (r * w2)
+    #     row2 = ((r + 1) * w2)
+    #     for i in range(aw2):
+    #         k = i * 2 + ofs
+    #         j = i + x2
+    #         p1 = inbuf[row1 + j] << 1
+    #         p2 = inbuf[row2 + j] << 1
+    #         wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
+    #         wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
+
     @micropython.viper
-    def _convert_part(self, r: int, x2: int, ofs: int, aw2: int, inbuf: ptr8, wbuf: ptr8):
-        w2 = int(self.width) >> 1
-        row1 = (r * w2)
-        row2 = ((r + 1) * w2)
-        for i in range(aw2):
-            k = i * 2 + ofs
-            j = i + x2
-            p1 = inbuf[row1 + j] << 1
-            p2 = inbuf[row2 + j] << 1
-            wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
-            wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
+    def _convert_part_write(self, x: int, y: int, aw: int, h: int, wbuf_sl):
+        inbuf = ptr8(self.buffer)
+        wbuf = ptr8(self.wbuf)
+        aw2 = aw >> 1
+        h2 = h >> 1
+        w = int(self.width)
+        w2 = w >> 1
+        x2 = x // 2
+        ofs = 0
+        if x2 < 0:
+            ofs = 2
+            x2 = 0
+            aw2 -= 1
+        row1 = y * w2
+        row2 = (y + 1) * w2
+        for j in range(h2):
+            k = ofs
+            for i in range(aw2):
+                p = i + x2
+                p1 = inbuf[row1 + p] << 1
+                p2 = inbuf[row2 + p] << 1
+                wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
+                wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
+                k += 2
+            row1 += w
+            row2 += w
+            self.spi.write(wbuf_sl)
 
     @get_time
     def flush_part(self, x=0, y=0, w=210, h=480):
@@ -196,16 +248,17 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._spi_write_cmd(b'\x2C')
         self.cs.off()
         self.dc.on()
-        x2 = x // 2
-        aw2 = w // 2
-        ofs = 0
-        if x2 < 0:
-            x2 = 0
-            ofs = 2
-            aw2 -= 1
-        for i in range(h // 2):
-            self._convert_part(y + i * 2, x2, ofs, aw2, self.buffer, self.wbuf)
-            self.spi.write(self.wbuf_mv[:w])
+        # x2 = x // 2
+        # aw2 = w // 2
+        # ofs = 0
+        # if x2 < 0:
+        #     x2 = 0
+        #     ofs = 2
+        #     aw2 -= 1
+        # for i in range(h // 2):
+        #     self._convert_part(y + i * 2, x2, ofs, aw2, self.buffer, self.wbuf)
+        #     self.spi.write(self.wbuf_mv[:w])
+        self._convert_part_write(x, y, w, h, self.wbuf_mv[:w])
         self.cs.on()
 
     def lcd_init(self, te_enable=False, rot=0, osc_51mhz=True, framerates=(1, 5), power_mode=True, inversion=False):
