@@ -366,15 +366,16 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._spi_write_cmd(b'\x01') # soft reset
 
     @micropython.viper
-    def _blit_buffer_rgb565_bayer_viper(self, inbuf: ptr16, obuf: ptr8, x: int, y: int, w: int, h: int, blut: ptr16):
+    def _blit_buffer_rgb565_bayer_viper(self, inbuf: ptr16, obuf: ptr8, x: int, xofs: int, y: int, yofs: int, w: int, w_safe: int, h_safe: int):
+        blut = ptr16(compressed_bayer_lut)
         w2 = int(self.width) >> 1
-        for yi in range(h):
+        for yi in range(h_safe):
             yo = y + yi
             optr = yo * w2 + (x >> 1)
-            iptr = yi * w
+            iptr = (yi + yofs) * w + xofs
             yo_mov = ((yo << 2) & 0xC)
             xo_mov = x & 3
-            wc = w
+            wc = w_safe
             if x & 1:
                 rgb565_2 = inbuf[iptr]
                 iptr += 1
@@ -410,12 +411,12 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
                 obuf[optr] = (obuf[optr] & 0x0f) | (outc1 << 4)
 
     @micropython.viper
-    def _blit_buffer_rgb565_viper(self, inbuf: ptr16, obuf: ptr8, x: int, y: int, w: int, h: int):
+    def _blit_buffer_rgb565_viper(self, inbuf: ptr16, obuf: ptr8, x: int, xofs: int, y: int, yofs: int, w: int, w_safe: int, h_safe: int):
         w2 = int(self.width) >> 1
-        for yi in range(h):
+        for yi in range(h_safe):
             optr = (y + yi) * w2 + (x >> 1)
-            iptr = yi * w
-            wc = w
+            iptr = (yi + yofs) * w + xofs
+            wc = w_safe
             if x & 1:
                 rgb565_2 = inbuf[iptr]
                 iptr += 1
@@ -438,7 +439,24 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
 
     @get_time
     def blit_buffer_rgb565(self, buffer, x, y, w, h, use_bayer=False):
+        if x >= self.width or y >= self.height or x + w <= 0 or y + h <= 0:
+            return
+        xofs = 0
+        w_safe = w
+        if x < 0:
+            xofs = -x
+            w_safe -= xofs
+            x = 0
+        yofs = 0
+        if y < 0:
+            yofs = -y
+            h -= yofs
+            y = 0
+        if y + h > self.height:
+            h = self.height - y
+        if x + w_safe > self.width:
+            w_safe = self.width - x
         if use_bayer:
-            self._blit_buffer_rgb565_bayer_viper(buffer, self.buffer, x, y, w, h, compressed_bayer_lut)
+            self._blit_buffer_rgb565_bayer_viper(buffer, self.buffer, x, xofs, y, yofs, w, w_safe, h)
         else:
-            self._blit_buffer_rgb565_viper(buffer, self.buffer, x, y, w, h)
+            self._blit_buffer_rgb565_viper(buffer, self.buffer, x, xofs, y, yofs, w, w_safe, h)
