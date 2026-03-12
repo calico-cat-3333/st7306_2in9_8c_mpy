@@ -40,6 +40,14 @@ compressed_bayer_lut = bytearray(struct.pack('@' + 'H' * 32,
     44975, 44991, 44991, 61375, 61375, 61439, 61439, 65535,
 ))
 
+# madctl, dtform, extra_pixel, w, h
+_ROTATIONS = (
+    (b'\x48', b'\x30', 2, LCD_WIDTH, LCD_HEIGHT),
+    (),
+    (b'\x80', b'\x22', 0, LCD_WIDTH, LCD_HEIGHT),
+    ()
+)
+
 class ST7306_2IN9_8C(framebuf.FrameBuffer):
     def __init__(self, spi, dc, cs, rst, te=None, rot=0, osc_51mhz=True, framerates=(1, 5), power_mode=True, inversion=False):
         # spi, cs, dc, rst, te: device and pin, te still wip
@@ -59,14 +67,13 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self.rst.value(1)
         self.te = te
 
-        self.rotation = rot
+        self.rotation = rot % 4
 
-        if self.rotation % 2 == 0:
-            self.height = LCD_HEIGHT
-            self.width = LCD_WIDTH
-        else:
-            self.height = LCD_WIDTH
-            self.width = LCD_HEIGHT
+        self._madctl, \
+        self._dtfrom, \
+        self._extra_pixel, \
+        self.width, \
+        self.height = _ROTATIONS[self.rotation]
 
         self.buffer = bytearray(self.height * self.width // 2) # 2 pixel pre byte
         self.wbuf = bytearray(self.width + 2) # 这个屏幕要求一次性必须写入 24 bit ，每次写入的 24 bit 为两行的 4 pixel, 暂时使用 4 次写入模式，即每 byte 的后 2 bti 被忽略，但是每 byte 刚好 2 pixel
@@ -115,8 +122,9 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         h2 = int(self.height) >> 1
         row1 = 0
         row2 = w2
+        expix = int(self._extra_pixel)
         for j in range(h2):
-            k = 2
+            k = expix
             for i in range(w2):
                 p1 = inbuf[row1 + i] << 1
                 p2 = inbuf[row2 + i] << 1
@@ -200,7 +208,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         x2 = x // 2
         ofs = 0
         if x2 < 0:
-            ofs = 2
+            ofs = int(self._extra_pixel)
             x2 = 0
             aw2 -= 1
         row1 = y * w2
@@ -229,7 +237,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
             h += 1
         if h % 2 != 0:
             h += 1
-        xofs = (x - 2) % 4
+        xofs = (x - self._extra_pixel) % 4
         if xofs != 0:
             x -= xofs
             w += xofs
@@ -237,10 +245,16 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         if wofs != 0:
             w += (4 - wofs)
 
-        xe = 56 - x // 4 - 1
-        xs = xe - w // 4 + 1
-        ys = y // 2
-        ye = ys + h // 2 - 1
+        if self.rotation == 0:
+            xe = 56 - x // 4 - 1
+            xs = xe - w // 4 + 1
+            ys = y // 2
+            ye = ys + h // 2 - 1
+        elif self.rotation == 2:
+            xs = 4 + x // 4
+            xe = xs + w // 4 - 1
+            ye = 239 - y // 2
+            ys = ye - h // 2 + 1
         self._spi_write_cmd(b'\x2A')
         self._spi_write_data(bytes([xs, xe]))
         self._spi_write_cmd(b'\x2B')
@@ -309,11 +323,10 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
 
         # todo: rotation support
         self._spi_write_cmd(b'\x36') # Memory Data Access Control
-        self._spi_write_data(b'\x48')
+        self._spi_write_data(self._madctl)
 
         self._spi_write_cmd(b'\x3A') # Data Format Select
-        # 8 color, data up down switch off, rgb111
-        self._spi_write_data(b'\x30') # 4 write for 24 bit
+        self._spi_write_data(self._dtfrom) # 4 write for 24 bit
        # self._spi_write_data(b'\x31') # 3 write for 24 bit
 
 
