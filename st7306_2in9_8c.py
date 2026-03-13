@@ -170,7 +170,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         xs = 4
         xe = 56
         ys = 0
-        ye = self.height // 2 - 1
+        ye = 239
         self._spi_write_cmd(b'\x2A')
         self._spi_write_data(bytes([xs, xe]))
         self._spi_write_cmd(b'\x2B')
