@@ -40,12 +40,12 @@ compressed_bayer_lut = bytearray(struct.pack('@' + 'H' * 32,
     44975, 44991, 44991, 61375, 61375, 61439, 61439, 65535,
 ))
 
-# madctl, dtform, extra_pixel, w, h
+# madctl, dtform, extra_pixel, w, h, wubflen
 _ROTATIONS = (
-    (b'\x48', b'\x30', 2, LCD_WIDTH, LCD_HEIGHT),
-    (),
-    (b'\x80', b'\x22', 0, LCD_WIDTH, LCD_HEIGHT),
-    ()
+    (b'\x48', b'\x30', 2, LCD_WIDTH, LCD_HEIGHT, LCD_WIDTH + 2), # 这个屏幕要求一次性必须写入 24 bit ，每次写入的 24 bit 为两行的 4 pixel, 暂时使用 4 次写入模式，即每 byte 的后 2 bti 被忽略，但是每 byte 刚好 2 pixel
+    (b'\x20', b'\x32', 0, LCD_HEIGHT, LCD_WIDTH, LCD_HEIGHT * 2), # 横向模式下，一次写入的数据块是 4 行，每行 2 像素，对应 24 bit 实际写入一次 32 bit 4 字节，所以缓冲区长度为 HEIGHT // 2（两列） * 4（4 字节）
+    (b'\x80', b'\x22', 0, LCD_WIDTH, LCD_HEIGHT, LCD_WIDTH + 2),
+    (b'\xe8', b'\x20', 2, LCD_HEIGHT, LCD_WIDTH, LCD_HEIGHT * 2)
 )
 
 class ST7306_2IN9_8C(framebuf.FrameBuffer):
@@ -73,10 +73,11 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._dtfrom, \
         self._extra_pixel, \
         self.width, \
-        self.height = _ROTATIONS[self.rotation]
+        self.height, \
+        wbuflen = _ROTATIONS[self.rotation]
 
         self.buffer = bytearray(self.height * self.width // 2) # 2 pixel pre byte
-        self.wbuf = bytearray(self.width + 2) # 这个屏幕要求一次性必须写入 24 bit ，每次写入的 24 bit 为两行的 4 pixel, 暂时使用 4 次写入模式，即每 byte 的后 2 bti 被忽略，但是每 byte 刚好 2 pixel
+        self.wbuf = bytearray(wbuflen)
         #self.wbuf = bytearray((self.width + 2) // 4 * 3) # 3 write for 24 bit
         self.wbuf_mv = memoryview(self.wbuf)
         super().__init__(self.buffer, self.width, self.height, framebuf.GS4_HMSB)
@@ -165,6 +166,29 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
     #         wbuf[k + 1] = wbuf[i * 3 + 1] | ((p1 >> 4) & 0x0E) | (p2 >> 7)
     #         wbuf[k + 2] = ((p2 << 1) & 0xC0) | ((p1 << 2) & 0x38) | ((p2 >> 1) & 0x07)
 
+    @micropython.viper
+    def _convert_horz(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
+        w2 = width >> 1
+        if r == -2:
+            row1 = 0
+            row2 = 0
+        else:
+            row1 = (r * w2)
+            row2 = ((r + 1) * w2)
+        row3 = ((r + 2) * w2)
+        row4 = ((r + 3) * w2)
+        k = 0
+        for i in range(w2):
+            p1 = inbuf[row1 + i] << 1
+            p2 = inbuf[row2 + i] << 1
+            p3 = inbuf[row3 + i] << 1
+            p4 = inbuf[row4 + i] << 1
+            wbuf[k] = ~((p1 & 0xE0) | ((p1 << 1) & 0x1C))
+            wbuf[k + 1] = ~((p2 & 0xE0) | ((p2 << 1) & 0x1C))
+            wbuf[k + 2] = ~((p3 & 0xE0) | ((p3 << 1) & 0x1C))
+            wbuf[k + 3] = ~((p4 & 0xE0) | ((p4 << 1) & 0x1C))
+            k += 4
+
     @get_time
     def flush(self):
         xs = 4
@@ -178,10 +202,12 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._spi_write_cmd(b'\x2C')
         self.cs.off()
         self.dc.on()
-        # for i in range(self.height // 2):
-        #     self._convert(i * 2, self.width, self.buffer, self.wbuf)
-        #     self.spi.write(self.wbuf)
-        self._convert_write()
+        if self.rotation % 2 == 0:
+            self._convert_write()
+        else:
+            for i in range((self.height + 2) // 4):
+                self._convert_horz(i * 4 - self._extra_pixel, self.width, self.buffer, self.wbuf)
+                self.spi.write(self.wbuf)
         self.cs.on()
 
     # @micropython.viper
