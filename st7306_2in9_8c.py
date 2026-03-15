@@ -175,8 +175,12 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         else:
             row1 = (r * w2)
             row2 = ((r + 1) * w2)
-        row3 = ((r + 2) * w2)
-        row4 = ((r + 3) * w2)
+        if r == 208:
+            row3 = 0
+            row4 = 0
+        else:
+            row3 = ((r + 2) * w2)
+            row4 = ((r + 3) * w2)
         k = 0
         for i in range(w2):
             p1 = inbuf[row1 + i] << 1
