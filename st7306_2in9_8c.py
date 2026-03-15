@@ -136,63 +136,6 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
             row2 += w
             self.spi.write(self.wbuf)
 
-    # @micropython.viper
-    # def _convert(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
-    #     w2 = width >> 1
-    #     row1 = (r * w2)
-    #     row2 = ((r + 1) * w2)
-    #     k = 2
-    #     for i in range(w2):
-    #         p1 = inbuf[row1 + i] << 1
-    #         p2 = inbuf[row2 + i] << 1
-    #         wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
-    #         wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
-    #         k += 2
-    #
-    # @micropython.viper
-    # def _convert_3b(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
-    #     w2 = width >> 1
-    #     row1 = (r * w2)
-    #     row2 = ((r + 1) * w2)
-    #     w2 = w2 >> 1
-    #     for i in range(w2):
-    #         k = i * 3
-    #         p1 = inbuf[row1 + i * 2] << 1
-    #         p2 = inbuf[row2 + i * 2] << 1
-    #         wbuf[k] = (p1 & 0xE0) | ((p2 >> 3) & 0x1C) | ((p1 >> 2) & 0x03)
-    #         wbuf[k + 1] = ((p1 << 6) & 0x80) | ((p2 << 3) & 0x70)
-    #         p1 = inbuf[row1 + i * 2 + 1] << 1
-    #         p2 = inbuf[row2 + i * 2 + 1] << 1
-    #         wbuf[k + 1] = wbuf[i * 3 + 1] | ((p1 >> 4) & 0x0E) | (p2 >> 7)
-    #         wbuf[k + 2] = ((p2 << 1) & 0xC0) | ((p1 << 2) & 0x38) | ((p2 >> 1) & 0x07)
-
-    # @micropython.viper
-    # def _convert_horz(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
-    #     w2 = width >> 1
-    #     if r == -2:
-    #         row1 = 0
-    #         row2 = 0
-    #     else:
-    #         row1 = (r * w2)
-    #         row2 = ((r + 1) * w2)
-    #     if r == 208:
-    #         row3 = 0
-    #         row4 = 0
-    #     else:
-    #         row3 = ((r + 2) * w2)
-    #         row4 = ((r + 3) * w2)
-    #     k = 0
-    #     for i in range(w2):
-    #         p1 = inbuf[row1 + i] << 1
-    #         p2 = inbuf[row2 + i] << 1
-    #         p3 = inbuf[row3 + i] << 1
-    #         p4 = inbuf[row4 + i] << 1
-    #         wbuf[k] = ~((p1 & 0xE0) | ((p1 << 1) & 0x1C))
-    #         wbuf[k + 1] = ~((p2 & 0xE0) | ((p2 << 1) & 0x1C))
-    #         wbuf[k + 2] = ~((p3 & 0xE0) | ((p3 << 1) & 0x1C))
-    #         wbuf[k + 3] = ~((p4 & 0xE0) | ((p4 << 1) & 0x1C))
-    #         k += 4
-
     @micropython.viper
     def _convert_write_h(self):
         inbuf = ptr8(self.buffer)
@@ -259,19 +202,6 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         else:
             self._convert_write_h()
         self.cs.on()
-
-    # @micropython.viper
-    # def _convert_part(self, r: int, x2: int, ofs: int, aw2: int, inbuf: ptr8, wbuf: ptr8):
-    #     w2 = int(self.width) >> 1
-    #     row1 = (r * w2)
-    #     row2 = ((r + 1) * w2)
-    #     for i in range(aw2):
-    #         k = i * 2 + ofs
-    #         j = i + x2
-    #         p1 = inbuf[row1 + j] << 1
-    #         p2 = inbuf[row2 + j] << 1
-    #         wbuf[k] = ~((p1 & 0xE0) | ((p2 >> 3) & 0x1C))
-    #         wbuf[k + 1] = ~(((p1 << 4) & 0xE0) | ((p2 << 1) & 0x1C))
 
     @micropython.viper
     def _convert_part_write(self, x: int, y: int, aw: int, h: int, wbuf_sl):
