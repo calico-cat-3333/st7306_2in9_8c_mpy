@@ -115,7 +115,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self.cs.on()
 
     @micropython.viper
-    def _convert_write(self):
+    def _convert_write_v(self):
         inbuf = ptr8(self.buffer)
         wbuf = ptr8(self.wbuf)
         w = int(self.width)
@@ -166,32 +166,80 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
     #         wbuf[k + 1] = wbuf[i * 3 + 1] | ((p1 >> 4) & 0x0E) | (p2 >> 7)
     #         wbuf[k + 2] = ((p2 << 1) & 0xC0) | ((p1 << 2) & 0x38) | ((p2 >> 1) & 0x07)
 
+    # @micropython.viper
+    # def _convert_horz(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
+    #     w2 = width >> 1
+    #     if r == -2:
+    #         row1 = 0
+    #         row2 = 0
+    #     else:
+    #         row1 = (r * w2)
+    #         row2 = ((r + 1) * w2)
+    #     if r == 208:
+    #         row3 = 0
+    #         row4 = 0
+    #     else:
+    #         row3 = ((r + 2) * w2)
+    #         row4 = ((r + 3) * w2)
+    #     k = 0
+    #     for i in range(w2):
+    #         p1 = inbuf[row1 + i] << 1
+    #         p2 = inbuf[row2 + i] << 1
+    #         p3 = inbuf[row3 + i] << 1
+    #         p4 = inbuf[row4 + i] << 1
+    #         wbuf[k] = ~((p1 & 0xE0) | ((p1 << 1) & 0x1C))
+    #         wbuf[k + 1] = ~((p2 & 0xE0) | ((p2 << 1) & 0x1C))
+    #         wbuf[k + 2] = ~((p3 & 0xE0) | ((p3 << 1) & 0x1C))
+    #         wbuf[k + 3] = ~((p4 & 0xE0) | ((p4 << 1) & 0x1C))
+    #         k += 4
+
     @micropython.viper
-    def _convert_horz(self, r: int, width: int, inbuf: ptr8, wbuf: ptr8):
-        w2 = width >> 1
-        if r == -2:
-            row1 = 0
-            row2 = 0
-        else:
+    def _convert_write_h(self):
+        inbuf = ptr8(self.buffer)
+        wbuf = ptr8(self.wbuf)
+        w2 = int(self.width) >> 1
+        h4 = (int(self.height) + 2) >> 2
+        expix = int(self._extra_pixel)
+        if expix == 2:
+            # extra pixel before buffer
+            k = 2
+            for i in range(w2):
+                p1 = inbuf[i] << 1
+                p2 = inbuf[w2 + i] << 1
+                wbuf[k] = ~((p1 & 0xE0) | ((p1 << 1) & 0x1C))
+                wbuf[k + 1] = ~((p2 & 0xE0) | ((p2 << 1) & 0x1C))
+                k += 4
+            self.spi.write(self.wbuf)
+        for i in range(h4 - 1):
+            r = (i << 2) + expix
             row1 = (r * w2)
             row2 = ((r + 1) * w2)
-        if r == 208:
-            row3 = 0
-            row4 = 0
-        else:
             row3 = ((r + 2) * w2)
             row4 = ((r + 3) * w2)
-        k = 0
-        for i in range(w2):
-            p1 = inbuf[row1 + i] << 1
-            p2 = inbuf[row2 + i] << 1
-            p3 = inbuf[row3 + i] << 1
-            p4 = inbuf[row4 + i] << 1
-            wbuf[k] = ~((p1 & 0xE0) | ((p1 << 1) & 0x1C))
-            wbuf[k + 1] = ~((p2 & 0xE0) | ((p2 << 1) & 0x1C))
-            wbuf[k + 2] = ~((p3 & 0xE0) | ((p3 << 1) & 0x1C))
-            wbuf[k + 3] = ~((p4 & 0xE0) | ((p4 << 1) & 0x1C))
-            k += 4
+            k = 0
+            for i in range(w2):
+                p1 = inbuf[row1 + i] << 1
+                p2 = inbuf[row2 + i] << 1
+                p3 = inbuf[row3 + i] << 1
+                p4 = inbuf[row4 + i] << 1
+                wbuf[k] = ~((p1 & 0xE0) | ((p1 << 1) & 0x1C))
+                wbuf[k + 1] = ~((p2 & 0xE0) | ((p2 << 1) & 0x1C))
+                wbuf[k + 2] = ~((p3 & 0xE0) | ((p3 << 1) & 0x1C))
+                wbuf[k + 3] = ~((p4 & 0xE0) | ((p4 << 1) & 0x1C))
+                k += 4
+            self.spi.write(self.wbuf)
+        if expix == 0:
+            # extra pixel after buffer
+            k = 0
+            row1 = 208 * w2
+            row2 = 209 * w2
+            for i in range(w2):
+                p1 = inbuf[row1 + i] << 1
+                p2 = inbuf[row2 + i] << 1
+                wbuf[k] = ~((p1 & 0xE0) | ((p1 << 1) & 0x1C))
+                wbuf[k + 1] = ~((p2 & 0xE0) | ((p2 << 1) & 0x1C))
+                k += 4
+            self.spi.write(self.wbuf)
 
     @get_time
     def flush(self):
@@ -207,11 +255,9 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self.cs.off()
         self.dc.on()
         if self.rotation % 2 == 0:
-            self._convert_write()
+            self._convert_write_v()
         else:
-            for i in range((self.height + 2) // 4):
-                self._convert_horz(i * 4 - self._extra_pixel, self.width, self.buffer, self.wbuf)
-                self.spi.write(self.wbuf)
+            self._convert_write_h()
         self.cs.on()
 
     # @micropython.viper
