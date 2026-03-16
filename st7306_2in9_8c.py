@@ -547,10 +547,55 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
                 outc1 = ((rgb565_1 >> 13) & 4) | ((rgb565_1 >> 9) & 2) | ((rgb565_1 >> 4) & 1)
                 obuf[optr] = (obuf[optr] & 0x0f) | (outc1 << 4)
 
+    @micropython.viper
+    def _blit_buffer_rgb565_sierra_lite_viper(self, inbuf: ptr16, obuf: ptr8, x: int, xofs: int, y: int, yofs: int, w: int, w_safe: int, h_safe: int, tbuf_r: ptr16, tbuf_g: ptr16, tbuf_b: ptr16):
+        nxterr_r = 0
+        nxterr_g = 0
+        nxterr_b = 0
+        w2 = int(self.width) >> 1
+        for i in range(w_safe + 2):
+            tbuf_r[i] = 3000
+            tbuf_g[i] = 3000
+            tbuf_b[i] = 3000
+        for yi in range(h_safe):
+            rowi = (yofs + yi) * w
+            rowo = (yi + y) * w2
+            for xi in range(w_safe):
+                coli = xofs + xi
+                colo = (xi + x) >> 1
+                rgb565 = inbuf[rowi + coli]
+                r = ((rgb565 >> 11) & 0x1f) + tbuf_r[xi + 1] + nxterr_r - 3000
+                g = ((rgb565 >> 5) & 0x3f) + tbuf_g[xi + 1] + nxterr_g - 3000
+                b = ((rgb565) & 0x1f) + tbuf_b[xi + 1] + nxterr_b - 3000
+                # npix_r = (r >> 7) & 1
+                # npix_g = (g >> 7) & 1
+                # npix_b = (b >> 7) & 1
+                npix_r = 0 if r < 0x10 else 1
+                npix_g = 0 if g < 0x20 else 1
+                npix_b = 0 if b < 0x10 else 1
+                diff_r = r - (npix_r << 5) + 1
+                diff_g = g - (npix_g << 6) + 1
+                diff_b = b - (npix_b << 5) + 1
+                nxterr_r = diff_r >> 1
+                nxterr_g = diff_g >> 1
+                nxterr_b = diff_b >> 1
+                tbuf_r[xi] += diff_r >> 2
+                tbuf_g[xi] += diff_g >> 2
+                tbuf_b[xi] += diff_b >> 2
+                tbuf_r[xi + 1] = (diff_r >> 2) + 3000
+                tbuf_g[xi + 1] = (diff_g >> 2) + 3000
+                tbuf_b[xi + 1] = (diff_b >> 2) + 3000
+                pm = ((xi + x + 1) & 1) << 2
+                obuf[rowo + colo] = (obuf[rowo + colo] & (0xf0 >> pm)) | (((npix_r << 2) | (npix_g << 1) | npix_b) << pm)
+            nxterr_r = 0
+            nxterr_g = 0
+            nxterr_b = 0
+
     # dither: choose which dither:
-    # 0: just pick the highest bit
+    # 0: no dither
     # 1: bayer 4x4 dither
     # 2: bayer 4x4 dither with liner RGB color convert
+    # 3: sierra lite dither (error diffusion, but slow)
     @get_time
     def blit_buffer_rgb565(self, buffer, x, y, w, h, dither=0):
         if x >= self.width or y >= self.height or x + w <= 0 or y + h <= 0:
@@ -576,3 +621,8 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
             self._blit_buffer_rgb565_bayer_viper(buffer, self.buffer, x, xofs, y, yofs, w, w_safe, h, compressed_bayer_lut)
         elif dither == 2:
             self._blit_buffer_rgb565_bayer_viper(buffer, self.buffer, x, xofs, y, yofs, w, w_safe, h, compressed_bayer_lut_lrgb)
+        elif dither == 3:
+            tbuf_r = bytearray((w_safe + 2) * 2)
+            tbuf_g = bytearray((w_safe + 2) * 2)
+            tbuf_b = bytearray((w_safe + 2) * 2)
+            self._blit_buffer_rgb565_sierra_lite_viper(buffer, self.buffer, x, xofs, y, yofs, w, w_safe, h, tbuf_r, tbuf_g, tbuf_b)
