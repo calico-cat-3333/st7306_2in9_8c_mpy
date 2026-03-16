@@ -40,6 +40,13 @@ compressed_bayer_lut = bytearray(struct.pack('@' + 'H' * 32,
     44975, 44991, 44991, 61375, 61375, 61439, 61439, 65535,
 ))
 
+compressed_bayer_lut_lrgb = bytearray(struct.pack('@' + 'H' * 32,
+0, 0, 0, 0, 0, 1, 1, 1,
+1, 1025, 1025, 1025, 1029, 1029, 1285, 1285,
+1317, 1317, 34085, 34085, 34213, 34213, 42405, 42407,
+44455, 44455, 44463, 44975, 44991, 61375, 61439, 65535,
+))
+
 # madctl, dtform, extra_pixel, w, h, wubflen
 _ROTATIONS = (
     (b'\x48', b'\x30', 2, LCD_WIDTH, LCD_HEIGHT, LCD_WIDTH + 2), # 这个屏幕要求一次性必须写入 24 bit ，每次写入的 24 bit 为两行的 4 pixel, 暂时使用 4 次写入模式，即每 byte 的后 2 bti 被忽略，但是每 byte 刚好 2 pixel
@@ -470,8 +477,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._spi_write_cmd(b'\x01') # soft reset
 
     @micropython.viper
-    def _blit_buffer_rgb565_bayer_viper(self, inbuf: ptr16, obuf: ptr8, x: int, xofs: int, y: int, yofs: int, w: int, w_safe: int, h_safe: int):
-        blut = ptr16(compressed_bayer_lut)
+    def _blit_buffer_rgb565_bayer_viper(self, inbuf: ptr16, obuf: ptr8, x: int, xofs: int, y: int, yofs: int, w: int, w_safe: int, h_safe: int, blut: ptr16):
         w2 = int(self.width) >> 1
         for yi in range(h_safe):
             yo = y + yi
@@ -541,8 +547,12 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
                 outc1 = ((rgb565_1 >> 13) & 4) | ((rgb565_1 >> 9) & 2) | ((rgb565_1 >> 4) & 1)
                 obuf[optr] = (obuf[optr] & 0x0f) | (outc1 << 4)
 
+    # dither: choose which dither:
+    # 0: just pick the highest bit
+    # 1: bayer 4x4 dither
+    # 2: bayer 4x4 dither with liner RGB color convert
     @get_time
-    def blit_buffer_rgb565(self, buffer, x, y, w, h, use_bayer=False):
+    def blit_buffer_rgb565(self, buffer, x, y, w, h, dither=0):
         if x >= self.width or y >= self.height or x + w <= 0 or y + h <= 0:
             return
         xofs = 0
@@ -560,7 +570,9 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
             h = self.height - y
         if x + w_safe > self.width:
             w_safe = self.width - x
-        if use_bayer:
-            self._blit_buffer_rgb565_bayer_viper(buffer, self.buffer, x, xofs, y, yofs, w, w_safe, h)
-        else:
+        if dither == 0:
             self._blit_buffer_rgb565_viper(buffer, self.buffer, x, xofs, y, yofs, w, w_safe, h)
+        elif dither == 1:
+            self._blit_buffer_rgb565_bayer_viper(buffer, self.buffer, x, xofs, y, yofs, w, w_safe, h, compressed_bayer_lut)
+        elif dither == 2:
+            self._blit_buffer_rgb565_bayer_viper(buffer, self.buffer, x, xofs, y, yofs, w, w_safe, h, compressed_bayer_lut_lrgb)
