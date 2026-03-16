@@ -57,7 +57,7 @@ def ctest1(i, thr):
 import math
 
 def ctest2(i, thr):
-    gamma = 2.4
+    gamma = 2.0
     fi = i / 255
     if fi <= 0.04045:
         li = fi / 12.92
@@ -70,7 +70,7 @@ def ctest2(i, thr):
         return 0
 
 def ctest3(i, thr):
-    gamma = 2.4
+    gamma = 2.0
     fi = (i >> 3) / 0x1f
     if fi <= 0.04045:
         li = fi / 12.92
@@ -155,7 +155,7 @@ def generate_gray_gradient(width, height):
 #     (255, 255, 255), (0, 0, 0) # 下：蓝 -> 黄
 # )
 
-img = Image.open("in2.png")
+img = Image.open("in.png")
 # #img.show()
 # 
 r, g, b = img.split()
