@@ -32,7 +32,7 @@ def get_time(f, *args, **kwargs):
     return new_func
 
 # 5bit gray to mono bayer dither
-# useage: ((ptr16(compressed_bayer_lut)[5bit grayscale] >> ((x & 3) | ((y << 2) & 0xC))) & 1)
+# useage(in viper): ((ptr16(compressed_bayer_lut)[5bit grayscale] >> ((x & 3) | ((y << 2) & 0xC))) & 1)
 compressed_bayer_lut = bytearray(struct.pack('@' + 'H' * 32,
     0, 1, 1, 1025, 1025, 1029, 1029, 1285,
     1285, 1317, 1317, 34085, 34085, 34213, 34213, 42405,
@@ -204,7 +204,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self.cs.on()
 
     @micropython.viper
-    def _convert_part_write(self, x: int, y: int, aw: int, h: int, wbuf_sl):
+    def _convert_part_write_v(self, x: int, y: int, aw: int, h: int, wbuf_sl):
         inbuf = ptr8(self.buffer)
         wbuf = ptr8(self.wbuf)
         aw2 = aw >> 1
@@ -232,53 +232,138 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
             row2 += w
             self.spi.write(wbuf_sl)
 
-    @get_time
-    def flush_part(self, x=0, y=0, w=210, h=480):
-        x = min(209, max(0, x))
-        y = min(479, max(0, y))
-        w = min(210 - x, max(0, w))
-        h = min(480 - y, max(0, h))
-        if y % 2 != 0:
-            y -= 1
-            h += 1
-        if h % 2 != 0:
-            h += 1
-        xofs = (x - self._extra_pixel) % 4
-        if xofs != 0:
-            x -= xofs
-            w += xofs
-        wofs = w % 4
-        if wofs != 0:
-            w += (4 - wofs)
+    @micropython.viper
+    def _convert_part_write_h(self, x: int, y: int, aw: int, h: int, wbuf_sl):
+        inbuf = ptr8(self.buffer)
+        wbuf = ptr8(self.wbuf)
+        w = int(self.width)
+        expix = int(self._extra_pixel)
+        h4 = h >> 2
+        h4c = h4
+        aw2 = aw >> 1
+        x2 = x >> 1
+        w2 = w >> 1
+        ofs = 0
+        if y == -2 and expix == 2:
+            row1 = x2
+            row2 = x2 + w2
+            k = 2
+            for i in range(aw2):
+                p1 = inbuf[row1 + i] << 1
+                p2 = inbuf[row2 + i] << 1
+                wbuf[k] = ~((p1 & 0xE0) | ((p1 << 1) & 0x1C))
+                wbuf[k + 1] = ~((p2 & 0xE0) | ((p2 << 1) & 0x1C))
+                k += 4
+            self.spi.write(wbuf_sl)
+            h4c -= 1
+            ofs = 4
+        elif y + h == 212 and expix == 0:
+            # process the last half line
+            h4c -= 1
+        for j in range(h4c):
+            r = (j << 2) + y + ofs
+            row1 = (r * w2) + x2
+            row2 = ((r + 1) * w2) + x2
+            row3 = ((r + 2) * w2) + x2
+            row4 = ((r + 3) * w2) + x2
+            k = 0
+            for i in range(aw2):
+                p1 = inbuf[row1 + i] << 1
+                p2 = inbuf[row2 + i] << 1
+                p3 = inbuf[row3 + i] << 1
+                p4 = inbuf[row4 + i] << 1
+                wbuf[k] = ~((p1 & 0xE0) | ((p1 << 1) & 0x1C))
+                wbuf[k + 1] = ~((p2 & 0xE0) | ((p2 << 1) & 0x1C))
+                wbuf[k + 2] = ~((p3 & 0xE0) | ((p3 << 1) & 0x1C))
+                wbuf[k + 3] = ~((p4 & 0xE0) | ((p4 << 1) & 0x1C))
+                k += 4
+            self.spi.write(wbuf_sl)
+        if y + h == 212 and expix == 0:
+            # extra pixel after buffer
+            k = 0
+            row1 = 208 * w2 + x2
+            row2 = 209 * w2 + x2
+            for i in range(aw2):
+                p1 = inbuf[row1 + i] << 1
+                p2 = inbuf[row2 + i] << 1
+                wbuf[k] = ~((p1 & 0xE0) | ((p1 << 1) & 0x1C))
+                wbuf[k + 1] = ~((p2 & 0xE0) | ((p2 << 1) & 0x1C))
+                k += 4
+            self.spi.write(self.wbuf)
 
-        if self.rotation == 0:
-            xe = 56 - x // 4 - 1
-            xs = xe - w // 4 + 1
-            ys = y // 2
-            ye = ys + h // 2 - 1
-        elif self.rotation == 2:
-            xs = 4 + x // 4
-            xe = xs + w // 4 - 1
-            ye = 239 - y // 2
-            ys = ye - h // 2 + 1
+    def _set_flush_area(self, x, y, w, h):
+        madctl = self._madctl[0]
+        # align to block edge
+        if madctl & 0x20: # mv = 1:
+            if x % 2 != 0:
+                x -= 1
+                w += 1
+            if w % 2 != 0:
+                w += 1
+            yofs = (y - self._extra_pixel) % 4
+            if yofs != 0:
+                y -= yofs
+                h += yofs
+            hofs = h % 4
+            if hofs != 0:
+                h += (4 - hofs)
+        else:
+            if y % 2 != 0:
+                y -= 1
+                h += 1
+            if h % 2 != 0:
+                h += 1
+            xofs = (x - self._extra_pixel) % 4
+            if xofs != 0:
+                x -= xofs
+                w += xofs
+            wofs = w % 4
+            if wofs != 0:
+                w += (4 - wofs)
+        p1 = y # y start
+        p2 = y + h - 1# y end
+        p3 = x # x start
+        p4 = x + w - 1# x end
+        if madctl & 0x80: # my = 1:
+            p1 = self.height - p1 - 1
+            p2 = self.height - p2 - 1
+            p1, p2 = p2, p1
+        if madctl & 0x40: # mx = 1:
+            p3 = self.width - p3 - 1
+            p4 = self.width - p4 - 1
+            p3, p4 = p4, p3
+        if madctl & 0x20: # mv = 1:
+            # swap x, y
+            p1, p3 = p3, p1
+            p2, p4 = p4, p2
+        xs = 4 + p3 // 4
+        xe = 4 + p4 // 4
+        ys = p1 // 2
+        ye = p2 // 2
         self._spi_write_cmd(b'\x2A')
         self._spi_write_data(bytes([xs, xe]))
         self._spi_write_cmd(b'\x2B')
         self._spi_write_data(bytes([ys, ye]))
+        return (x, y, w, h) # return aligned x, y, w, h
+
+    @get_time
+    def flush_part(self, x=0, y=0, w=None, h=None):
+        if w == None:
+            w = self.width
+        if h == None:
+            h = self.height
+        x = min(self.width - 1, max(0, x))
+        y = min(self.height - 1, max(0, y))
+        w = min(self.width - x, max(0, w))
+        h = min(self.height - y, max(0, h))
+        x, y, w, h = self._set_flush_area(x, y, w, h)
         self._spi_write_cmd(b'\x2C')
         self.cs.off()
         self.dc.on()
-        # x2 = x // 2
-        # aw2 = w // 2
-        # ofs = 0
-        # if x2 < 0:
-        #     x2 = 0
-        #     ofs = 2
-        #     aw2 -= 1
-        # for i in range(h // 2):
-        #     self._convert_part(y + i * 2, x2, ofs, aw2, self.buffer, self.wbuf)
-        #     self.spi.write(self.wbuf_mv[:w])
-        self._convert_part_write(x, y, w, h, self.wbuf_mv[:w])
+        if self.rotation % 2 == 0:
+            self._convert_part_write_v(x, y, w, h, self.wbuf_mv[:w])
+        else:
+            self._convert_part_write_h(x, y, w, h, self.wbuf_mv[:w * 2])
         self.cs.on()
 
     def lcd_init(self, te_enable=False, rot=0, osc_51mhz=True, framerates=(1, 5), power_mode=True, inversion=False):
