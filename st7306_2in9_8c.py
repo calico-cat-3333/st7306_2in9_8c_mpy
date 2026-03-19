@@ -432,7 +432,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._spi_write_data(b'\x20') # Mono
 
         self._spi_write_cmd(b'\xB8') # Panel Setting
-        self._spi_write_data(b'\x09') # column inversion, 2 line interval, One Line Interlace
+        self._spi_write_data(b'\x09') # column inversion, Frame interval, One Line Interlace
 
         if te_enable:
             self._spi_write_cmd(b'\x35') # TE Setting
