@@ -17,19 +17,19 @@ class COLOR111:
     YELLOW = 0b110
     WHITE = 0b111
 
-def get_time(f, *args, **kwargs):
-    myname = f.__name__
-    def new_func(*args, **kwargs):
-        t = time.ticks_us()
-        result = f(*args, **kwargs)
-        delta = time.ticks_diff(time.ticks_us(), t)
-        print('Function {} Time = {:6.3f}ms'.format(myname, delta/1000), end=', ')
-        if myname == 'flush':
-            print('framerate = {:6.3f}fps'.format(1000000/delta))
-        else:
-            print('')
-        return result
-    return new_func
+# def get_time(f, *args, **kwargs):
+#     myname = f.__name__
+#     def new_func(*args, **kwargs):
+#         t = time.ticks_us()
+#         result = f(*args, **kwargs)
+#         delta = time.ticks_diff(time.ticks_us(), t)
+#         print('Function {} Time = {:6.3f}ms'.format(myname, delta/1000), end=', ')
+#         if myname == 'flush':
+#             print('framerate = {:6.3f}fps'.format(1000000/delta))
+#         else:
+#             print('')
+#         return result
+#     return new_func
 
 # 5bit gray to mono bayer dither
 # useage(in viper): ((ptr16(compressed_bayer_lut)[5bit grayscale] >> ((x & 3) | ((y << 2) & 0xC))) & 1)
@@ -191,7 +191,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
                 k += 4
             self.spi.write(self.wbuf)
 
-    @get_time
+    # @get_time
     def flush(self):
         xs = 4
         xe = 56
@@ -353,7 +353,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
         self._spi_write_data(bytes([ys, ye]))
         return (x, y, w, h) # return aligned x, y, w, h
 
-    @get_time
+    # @get_time
     def flush_part(self, x=0, y=0, w=None, h=None):
         if w == None:
             w = self.width
@@ -596,7 +596,7 @@ class ST7306_2IN9_8C(framebuf.FrameBuffer):
     # 1: bayer 4x4 dither
     # 2: bayer 4x4 dither with liner RGB color convert
     # 3: sierra lite dither (error diffusion, but slow)
-    @get_time
+    # @get_time
     def blit_buffer_rgb565(self, buffer, x, y, w, h, dither=0):
         if x >= self.width or y >= self.height or x + w <= 0 or y + h <= 0:
             return
