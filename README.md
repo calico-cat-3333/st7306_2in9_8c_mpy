@@ -21,7 +21,7 @@ import framebuf
 
 import st7306_2in9_8c
 
-spi = machine.SPI(0, baudrate=40000000, polarity=0, phase=0, mosi=machine.Pin(3), sck=machine.Pin(2))
+spi = machine.SPI(0, baudrate=40000000, polarity=0, phase=0, sck=machine.Pin(2), mosi=machine.Pin(3), miso=None)
 
 rst = machine.Pin(4, machine.Pin.OUT)
 dc = machine.Pin(5, machine.Pin.OUT)
