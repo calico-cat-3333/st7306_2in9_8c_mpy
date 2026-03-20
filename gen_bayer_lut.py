@@ -1,5 +1,7 @@
 import numpy as np
 from PIL import Image
+import math
+
 
 # 4x4 Bayer matrix
 bayer4x4 = np.array([
@@ -20,41 +22,11 @@ bayer8x8 = np.array([
     [42, 26, 38, 22, 41, 25, 37, 21]
 ])
 
-def bayer_dither_4gray(img):
-    """
-    输入: 8-bit 灰度图像（PIL Image），输出：抖动后的4级灰度图像
-    """
-    #img = img.convert("L")
-    arr = np.array(img)
-    h, w = arr.shape
-
-    output = np.zeros_like(arr)
-
-    for y in range(h):
-        for x in range(w):
-            pixel = arr[y, x]
-            threshold = (bayer4x4[y % 4][x % 4] + 0.5) * 16  # 范围 0~255
-            dithered = pixel + threshold - 128  # 中心化
-            level = np.clip(dithered // 64, 0, 3)
-            output[y, x] = level * 85  # 4 级灰度：0, 85, 170, 255
-
-    return Image.fromarray(output, mode='L')
-
 def ctest(i, thr):
     if i > thr:
         return 1
     else:
         return 0
-
-def ctest1(i, thr):
-    level = i // 85
-    # if i % 85 > int(thr / 3 + 0.5):
-    if i % 85 > thr // 3:
-        return min(level + 1, 3)
-    else:
-        return level
-
-import math
 
 def ctest2(i, thr):
     gamma = 2.0
@@ -148,73 +120,48 @@ def generate_gray_gradient(width, height):
 #     (255, 0, 0), (0, 255, 0),  # 上：红 -> 绿
 #     (0, 0, 255), (255, 255, 0) # 下：蓝 -> 黄
 # )
-# 
+#
 # img = generate_2d_color_gradient(
 #     512, 512,
-#     (255, 255, 255), (0, 0, 0),  # 上：红 -> 绿
-#     (255, 255, 255), (0, 0, 0) # 下：蓝 -> 黄
+#     (255, 255, 255), (0, 0, 0), # 白 -> 黑
+#     (255, 255, 255), (0, 0, 0)
 # )
 
-img = Image.open("in.png")
-# #img.show()
-# 
-r, g, b = img.split()
-# 
-orc = bayer_dither4(r, ctest)
-ogc = bayer_dither4(g, ctest)
-obc = bayer_dither4(b, ctest)
-# 
-o1 = Image.merge('RGB', (orc, ogc, obc))
-# 
-orc = bayer_dither4(r, ctest2)
-ogc = bayer_dither4(g, ctest2)
-obc = bayer_dither4(b, ctest2)
-# 
-o2 = Image.merge('RGB', (orc, ogc, obc))
-# 
-# o.save('out8.png')
-h, w = np.array(r).shape
-o = Image.new('RGB', (w * 3, h), 'white')
-
-o.paste(img, (w, 0))
-o.paste(o1, (0, 0))
-o.paste(o2, (w * 2, 0))
-
-o.show()
+# img = Image.open("in.png")
+# r, g, b = img.split()
+#
+# orc = bayer_dither4(r, ctest)
+# ogc = bayer_dither4(g, ctest)
+# obc = bayer_dither4(b, ctest)
+# o1 = Image.merge('RGB', (orc, ogc, obc))
+#
+# orc = bayer_dither4(r, ctest2)
+# ogc = bayer_dither4(g, ctest2)
+# obc = bayer_dither4(b, ctest2)
+# o2 = Image.merge('RGB', (orc, ogc, obc))
+#
+# h, w = np.array(r).shape
+# o = Image.new('RGB', (w * 3, h), 'white')
+#
+# o.paste(img, (w, 0))
+# o.paste(o1, (0, 0))
+# o.paste(o2, (w * 2, 0))
+#
+# o.show()
 
 # img = generate_gray_gradient(512, 512)
 # img.show()
-# 
+#
 # o = bayer_dither(img)
-# 
+#
 #o.show()
-# 
+#
 # orc1 = bayer_dither8(r)
 # ogc1 = bayer_dither8(g)
 # obc1 = bayer_dither8(b)
-# 
+#
 # o1 = Image.merge('RGB', (orc1, ogc1, obc1))
 # o1.show()
-# 
-# print('const uint8_t bayer_lut[32][4][4] = {')
-# for i in range(0, 1<<5):
-#     print('{', end='')
-#     for y in range(0, 4):
-#         print('{', end='')
-#         for x in range(0, 4):
-#             thr = (bayer4x4[y % 4][x % 4]) * 16
-#             o = ctest(i << 3, thr)
-#             if x == 3:
-#                 print(o, end='')
-#             else:
-#                 print(o, end=', ')
-#         if y == 3:
-#             print('}', end='')
-#         else:
-#             print('}', end=', ')
-#     print('},')
-# print('};')
-# 
 
 a =[]
 print('compressed_bayer_lut = (')
@@ -255,60 +202,36 @@ print(')')
 # 42405, 42407, 42407, 44455, 44455, 44463, 44463, 44975,
 # 44975, 44991, 44991, 61375, 61375, 61439, 61439, 65535,
 # ]
-# 
-# compressed_bayer_lut = (
-# 0, 0, 1, 1, 1, 1, 1, 1,
-# 1, 1, 1025, 1025, 1025, 1029, 1029, 1029,
-# 1285, 1285, 1317, 1317, 34085, 34213, 34213, 42405,
-# 42407, 44455, 44455, 44463, 44975, 44991, 61375, 61439,
-# )
-# 
-# compressed_bayer_lut = (
-# 0, 0, 0, 0, 1, 1, 1, 1,
-# 1, 1, 1, 1, 1, 1, 1, 1,
-# 1, 1, 1, 1025, 1025, 1025, 1025, 1025,
-# 1025, 1025, 1029, 1029, 1029, 1029, 1029, 1285,
-# 1285, 1285, 1285, 1317, 1317, 1317, 1317, 34085,
-# 34085, 34085, 34213, 34213, 34213, 42405, 42405, 42405,
-# 42407, 42407, 44455, 44455, 44455, 44463, 44463, 44975,
-# 44975, 44991, 44991, 61375, 61375, 61439, 61439, 65535,
-# )
+#
 
-compressed_bayer_lut = (
-0, 0, 0, 0, 0, 0, 0, 1,
-1, 1, 1, 1025, 1025, 1025, 1029, 1029,
-1285, 1285, 1317, 1317, 34085, 34085, 34213, 42405,
-42407, 44455, 44455, 44463, 44975, 44991, 61375, 65535,
-)
-
-
-def lutbayer_dither4(img):
-    """
-    输入: 图像的R/G/B分量
-    """
-    #img = img.convert("L")
-    arr = np.array(img)
-    h, w = arr.shape
-
-    output = np.zeros_like(arr)
-
-    for y in range(h):
-        for x in range(w):
-            pixel = arr[y, x]
-            output[y, x] = ((compressed_bayer_lut[pixel >> 3] >> ((x & 3) | ((y << 2) & 0xC))) & 1) * 255
-    return Image.fromarray(output, mode='L')
-
+#
+# def lutbayer_dither4(img):
+#     """
+#     输入: 图像的R/G/B分量
+#     """
+#     #img = img.convert("L")
+#     arr = np.array(img)
+#     h, w = arr.shape
+#
+#     output = np.zeros_like(arr)
+#
+#     for y in range(h):
+#         for x in range(w):
+#             pixel = arr[y, x]
+#             output[y, x] = ((compressed_bayer_lut[pixel >> 3] >> ((x & 3) | ((y << 2) & 0xC))) & 1) * 255
+#     return Image.fromarray(output, mode='L')
+#
 
 # img = Image.open("in.jpg")
 # #img.show()
-# 
-r, g, b = img.split()
-# 
-orc = lutbayer_dither4(r)
-ogc = lutbayer_dither4(g)
-obc = lutbayer_dither4(b)
-# 
-o = Image.merge('RGB', (orc, ogc, obc))
-# 
+#
+# r, g, b = img.split()
+#
+# orc = lutbayer_dither4(r)
+# ogc = lutbayer_dither4(g)
+# obc = lutbayer_dither4(b)
+#
+# o = Image.merge('RGB', (orc, ogc, obc))
+#
 # o.save('lutout8.png')
-o.show()
+# o.show()
